@@ -1,14 +1,2 @@
-# PyQt5-Daily-Task-Planner-App
-Contains the source code for Youtube videos on channel youtube.com/codefirstio
-Source code for this tutorial series: https://www.youtube.com/playlist?list=PLs3IFJPw3G9KZsqOj8vS_9KGApyxpGN5f
-
-## About
-This is the source code a video series about creating a Daily Task Planning app with PyQt5.
-  
-Tutorial by Youtube channel: Code First  
-Channel: youtube.com/CodeFirstio  
-Email: code.first.io@gmail.com  
-You can ask me questions or just drop a line!
-
-## Requirements
-PyQt5 and PyQt5 tools are required. Install with ___pip install pyqt5___ and ___pip install pyqt5-tools___.
+# PyQt5 Family Wall Calendar
+pyqt5 code for a calendar that displays reminders for doctor's appointments, birthdays, etc. using an orange pi zero 2 and a screen recovered from a laptop via the hdmi port, and also uses two max7219 8x32 arrays to display a message about the next reminder one day in advance. Not finished yet
