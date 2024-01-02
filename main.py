@@ -1,6 +1,9 @@
 import sqlite3
 from PyQt5 import QtCore
 from PyQt5.QtWidgets import QWidget, QApplication, QListWidgetItem, QMessageBox
+from PyQt5.QtCore import Qt
+from PyQt5.QtGui import QTextCharFormat, QColor
+from PyQt5.QtCore import QDate
 from PyQt5.uic import loadUi
 import sys
 import signal
@@ -17,8 +20,7 @@ import datetime
 import paho.mqtt.client as mqtt
 
 
-
- # create matrix device
+# create matrix device
 # serial = spi(port=0, device=1, gpio=noop())
 # device = max7219(serial, cascaded= 8, block_orientation=-90)
 # print("Created device")
@@ -28,30 +30,31 @@ port = 8883
 topic = "dagarott@gmail.com/frame"
 # Generate a Client ID with the publish prefix.
 client_id = f'publish-{random.randint(0, 1000)}'
-username ="dagarott@gmail.com" 
-password ="Dau8queL"
+username = "dagarott@gmail.com"
+password = "Dau8queL"
 client_id = f'python-mqtt-{random.randint(0, 1000)}'
+
 
 class Window(QWidget):
     def __init__(self):
         super(Window, self).__init__()
         loadUi("main.ui", self)
-        # self.calendarWidget.selectionChanged.connect(self.calendarDateChanged)
         # self.calendarDateChanged()
         # self.saveButton.clicked.connect(self.saveChanges)
         # self.addButton.clicked.connect(self.addNewTask)
-         # mqtt client
+        # mqtt client
         self.client = mqtt.Client(client_id, transport="websockets")
         self.client.username_pw_set(username, password)
         self.client.on_connect = self.on_connect
         self.client.on_disconnect = self.on_disconnect
-        self.client.on_message= self.on_message
+        self.client.on_message = self.on_message
         self.mqtt_connected = False
         print(f'Connecting now to {broker}:{port}')
         self.client.connect(broker, port)
         self.client.loop_start()
         self.client.subscribe(topic)
-        
+        self.mostrar_eventos()
+
     def calendarDateChanged(self):
         print("The calendar date was changed.")
         dateSelected = self.calendarWidget.selectedDate().toPyDate()
@@ -69,17 +72,35 @@ class Window(QWidget):
         # Obtener eventos programados para mañana desde la base de datos
         conn = sqlite3.connect("eventos.db")
         c = conn.cursor()
-        c.execute("SELECT fecha, hora, descripcion FROM eventos WHERE fecha = ?;", (mañana,))
+        c.execute(
+            "SELECT tipo, fecha, hora, descripcion FROM eventos WHERE fecha = ?;", (mañana,))
         eventos = c.fetchall()
+        c.execute("SELECT fecha FROM eventos") # Reemplazar 'tabla' con la tabla correcta de la base de datos
+        fechas = c.fetchall()
         conn.close()
 
+        for fecha in fechas:
+            # Convertir la tupla de fecha a una cadena
+            fecha_str = fecha[0]
+            # Convertir la cadena de fecha a un objeto de tipo QDate
+            fecha_qdate = QDate.fromString(fecha_str, "yyyy-MM-dd")
+            # Obtener los campos de año, mes y día
+            year = int(fecha_qdate.year())
+            month = int(fecha_qdate.month())
+            day = int(fecha_qdate.day())
+
+            self.marcar_dia(year,month,day)
+
         if eventos:
-            texto_eventos = "\n".join([f"{evento[0]} {evento[1]}: {evento[2]}" for evento in eventos])
+            texto_eventos = "\n".join(
+                [f"{evento[0]} {evento[1]} {evento[2]} {evento[3]}" for evento in eventos])
             print(texto_eventos)
+            
         else:
             print("No hay eventos programados para mañana.")
 
-    def guardar_evento(self, msg_date,msg_time,msg_description):
+    def guardar_evento(self, msg_eventtype, msg_date, msg_time, msg_description):
+        self.eventype = msg_eventtype
         self.fecha = msg_date
         self.hora = msg_time
         self.descripcion = msg_description
@@ -87,12 +108,21 @@ class Window(QWidget):
         # Guardar evento en la base de datos
         conn = sqlite3.connect("eventos.db")
         c = conn.cursor()
-        c.execute("CREATE TABLE IF NOT EXISTS eventos (fecha DATE, hora TIME, descripcion TEXT);")
-        c.execute("INSERT INTO eventos VALUES (?, ?, ?);", (self.fecha, self.hora, self.descripcion))
+        c.execute(
+            "CREATE TABLE IF NOT EXISTS eventos (tipo TYPE,fecha DATE, hora TIME, descripcion TEXT);")
+        c.execute("INSERT INTO eventos VALUES (?, ?, ?, ?);",
+                  (self.eventype, self.fecha, self.hora, self.descripcion))
         conn.commit()
         conn.close()
         print("Evento guardado exitosamente.")
         self.mostrar_eventos()
+
+    def marcar_dia(self, year, month,day):
+        # day = QDate(date.year, date.month, date.day)
+        format = QTextCharFormat()
+        format.setBackground(QColor(255, 0, 0))
+        self.calendarWidget.setDateTextFormat(QDate(year, month, day),format)
+    
 
     # def updateTaskList(self, date):
     #     self.tasksListWidget.clear()
@@ -111,7 +141,6 @@ class Window(QWidget):
     #         elif result[1] == "NO":
     #             item.setCheckState(QtCore.Qt.Unchecked)
     #         self.tasksListWidget.addItem(item)
-
 
     # def saveChanges(self):
     #     db = sqlite3.connect("data.db")
@@ -159,17 +188,19 @@ class Window(QWidget):
         # stop loop
         self.client.loop_stop()
 
-    def on_subscribe(self,mqttsub, obj, mid, granted_qos):
+    def on_subscribe(self, mqttsub, obj, mid, granted_qos):
         print("Subscribed: " + str(mid) + " " + str(granted_qos))
 
     def on_message(self, client, userdata, message):
         # print("message received " ,str(message.payload.decode("utf-8")))
-        self.msg_data =str(message.payload.decode("utf-8")).split(",")
-        print("date:",self.msg_data[0])
-        print("time:",self.msg_data[1])
-        print("description:",self.msg_data[2])
+        self.msg_data = str(message.payload.decode("utf-8")).split(",")
+        print("event type:", self.msg_data[0])
+        print("date:", self.msg_data[1])
+        print("time:", self.msg_data[2])
+        print("description:", self.msg_data[3])
         self.EventList.addItem(str(message.payload.decode("utf-8")))
-        self.guardar_evento( self.msg_data[0],self.msg_data[1],self.msg_data[2])
+        self.guardar_evento(
+            self.msg_data[0], self.msg_data[1], self.msg_data[2], self.msg_data[3])
 
     ################################################################
     # The callback for when the broker responds to our connection request.
@@ -212,11 +243,9 @@ class Window(QWidget):
     # #   mid is an integer message ID.
 
 
-
-
 if __name__ == "__main__":
     app = QApplication(sys.argv)
-    
+
     conn = sqlite3.connect("eventos.db")
     conn.close()
 
