@@ -10,6 +10,7 @@ import signal
 import time
 import random
 import datetime
+from datetime import datetime
 # from luma.led_matrix.device import max7219
 # from luma.core.interface.serial import spi, noop
 # from luma.core.render import canvas
@@ -53,7 +54,8 @@ class Window(QWidget):
         self.client.connect(broker, port)
         self.client.loop_start()
         self.client.subscribe(topic)
-        self.mostrar_eventos()
+        self.update_calendar_status()
+        self.update_events_listview()
 
     def calendarDateChanged(self):
         print("The calendar date was changed.")
@@ -64,18 +66,36 @@ class Window(QWidget):
         # print(self.msg)
         # show_message(device, self.msg, fill="white", font=proportional(CP437_FONT))
 
-    def mostrar_eventos(self):
-        # Obtener la fecha de mañana
-        mañana = datetime.date.today() + datetime.timedelta(days=1)
-        print(mañana)
+    def update_events_listview(self):
 
-        # Obtener eventos programados para mañana desde la base de datos
+        # Obtener la fecha actual
+        currentMonth = datetime.now().month
+        currentYear = datetime.now().year
+        fecha_actual = datetime.now().strftime("%Y-%m")
+        print(currentMonth)
+        print(currentYear)
+        print(fecha_actual)
+        # Obtener eventos del mes actual de la base de datos
+        conn = sqlite3.connect("eventos.db")
+        c = conn.cursor()
+        # c.execute("SELECT tipo, fecha, hora, descripcion FROM eventos WHERE strftime('%m', fecha) = ? AND strftime('%Y', fecha) = ?", (currentMonth, currentYear))
+        c.execute(
+            f"SELECT tipo, fecha, hora, descripcion FROM eventos WHERE fecha LIKE '{fecha_actual}%'")
+        eventos = c.fetchall()
+        conn.close()
+        # Agregar los eventos al QListWidget
+        for evento in eventos:
+            self.EventList.addItem(
+                evento[0] + ',' + evento[2] + ',' + evento[3])
+            print(evento[0] + ',' + evento[2] + ',' + evento[3])
+
+    def update_calendar_status(self):
         conn = sqlite3.connect("eventos.db")
         c = conn.cursor()
         c.execute(
-            "SELECT tipo, fecha, hora, descripcion FROM eventos WHERE fecha = ?;", (mañana,))
-        eventos = c.fetchall()
-        c.execute("SELECT fecha FROM eventos") # Reemplazar 'tabla' con la tabla correcta de la base de datos
+            "CREATE TABLE IF NOT EXISTS eventos (tipo TYPE,fecha DATE, hora TIME, descripcion TEXT);")
+        # Reemplazar 'tabla' con la tabla correcta de la base de datos
+        c.execute("SELECT fecha FROM eventos")
         fechas = c.fetchall()
         conn.close()
 
@@ -88,18 +108,15 @@ class Window(QWidget):
             year = int(fecha_qdate.year())
             month = int(fecha_qdate.month())
             day = int(fecha_qdate.day())
+            self.colour_event_day(year, month, day)
 
-            self.marcar_dia(year,month,day)
+    def colour_event_day(self, year, month, day):
+        # day = QDate(date.year, date.month, date.day)
+        format = QTextCharFormat()
+        format.setBackground(QColor(255, 0, 0))
+        self.calendarWidget.setDateTextFormat(QDate(year, month, day), format)
 
-        if eventos:
-            texto_eventos = "\n".join(
-                [f"{evento[0]} {evento[1]} {evento[2]} {evento[3]}" for evento in eventos])
-            print(texto_eventos)
-            
-        else:
-            print("No hay eventos programados para mañana.")
-
-    def guardar_evento(self, msg_eventtype, msg_date, msg_time, msg_description):
+    def save_events(self, msg_eventtype, msg_date, msg_time, msg_description):
         self.eventype = msg_eventtype
         self.fecha = msg_date
         self.hora = msg_time
@@ -110,73 +127,39 @@ class Window(QWidget):
         c = conn.cursor()
         c.execute(
             "CREATE TABLE IF NOT EXISTS eventos (tipo TYPE,fecha DATE, hora TIME, descripcion TEXT);")
-        c.execute("INSERT INTO eventos VALUES (?, ?, ?, ?);",
-                  (self.eventype, self.fecha, self.hora, self.descripcion))
-        conn.commit()
+        # Lee los datos existentes en la base de datos para poder verificar si los nuevos datos ya existen.
+        c.execute("SELECT COUNT(*) FROM eventos WHERE tipo = ? AND fecha = ? AND hora = ? AND descripcion = ?", (self.eventype, self.fecha,
+                  self.hora, self.descripcion))
+        count = c.fetchone()[0]  # Obtiene el resultado de la consulta
+
+        if count == 0:
+            c.execute("INSERT INTO eventos VALUES (?, ?, ?, ?);",
+                      (self.eventype, self.fecha, self.hora, self.descripcion))
+            conn.commit()
+            conn.close()
+            print("Evento guardado exitosamente.")
+        else:
+            print("Evento ya existia en db")
+
+    def shown_on_display_coming_event(self):
+        # Obtener la fecha de mañana
+        mañana = datetime.date.today() + datetime.timedelta(days=1)
+        print(mañana)
+
+        # Obtener eventos programados para mañana desde la base de datos
+        conn = sqlite3.connect("eventos.db")
+        c = conn.cursor()
+        c.execute(
+            "SELECT tipo, fecha, hora, descripcion FROM eventos WHERE fecha = ?;", (mañana,))
+        eventos = c.fetchall()
         conn.close()
-        print("Evento guardado exitosamente.")
-        self.mostrar_eventos()
 
-    def marcar_dia(self, year, month,day):
-        # day = QDate(date.year, date.month, date.day)
-        format = QTextCharFormat()
-        format.setBackground(QColor(255, 0, 0))
-        self.calendarWidget.setDateTextFormat(QDate(year, month, day),format)
-    
-
-    # def updateTaskList(self, date):
-    #     self.tasksListWidget.clear()
-
-    #     db = sqlite3.connect("data.db")
-    #     cursor = db.cursor()
-
-    #     query = "SELECT task, completed FROM tasks WHERE date = ?"
-    #     row = (date,)
-    #     results = cursor.execute(query, row).fetchall()
-    #     for result in results:
-    #         item = QListWidgetItem(str(result[0]))
-    #         item.setFlags(item.flags() | QtCore.Qt.ItemIsUserCheckable)
-    #         if result[1] == "YES":
-    #             item.setCheckState(QtCore.Qt.Checked)
-    #         elif result[1] == "NO":
-    #             item.setCheckState(QtCore.Qt.Unchecked)
-    #         self.tasksListWidget.addItem(item)
-
-    # def saveChanges(self):
-    #     db = sqlite3.connect("data.db")
-    #     cursor = db.cursor()
-    #     date = self.calendarWidget.selectedDate().toPyDate()
-
-    #     for i in range(self.tasksListWidget.count()):
-    #         item = self.tasksListWidget.item(i)
-    #         task = item.text()
-    #         if item.checkState() == QtCore.Qt.Checked:
-    #             query = "UPDATE tasks SET completed = 'YES' WHERE task = ? AND date = ?"
-    #         else:
-    #             query = "UPDATE tasks SET completed = 'NO' WHERE task = ? AND date = ?"
-    #         row = (task, date,)
-    #         cursor.execute(query, row)
-    #     db.commit()
-
-    #     messageBox = QMessageBox()
-    #     messageBox.setText("Changes saved.")
-    #     messageBox.setStandardButtons(QMessageBox.Ok)
-    #     messageBox.exec()
-
-    # def addNewTask(self):
-    #     db = sqlite3.connect("data.db")
-    #     cursor = db.cursor()
-
-    #     newTask = str(self.taskLineEdit.text())
-    #     date = self.calendarWidget.selectedDate().toPyDate()
-
-    #     query = "INSERT INTO tasks(task, completed, date) VALUES (?,?,?)"
-    #     row = (newTask, "NO", date,)
-
-    #     cursor.execute(query, row)
-    #     db.commit()
-    #     self.updateTaskList(date)
-    #     self.taskLineEdit.clear()
+        if eventos:
+            texto_eventos = "\n".join(
+                [f"{evento[0]} {evento[1]} {evento[2]} {evento[3]}" for evento in eventos])
+            print(texto_eventos)
+        else:
+            print("No hay eventos programados para mañana.")
 
     def on_connect(self, client, userdata, flags, rc):
         print("Connected With Result Code " + str(rc))
@@ -198,9 +181,10 @@ class Window(QWidget):
         print("date:", self.msg_data[1])
         print("time:", self.msg_data[2])
         print("description:", self.msg_data[3])
-        self.EventList.addItem(str(message.payload.decode("utf-8")))
-        self.guardar_evento(
+        self.save_events(
             self.msg_data[0], self.msg_data[1], self.msg_data[2], self.msg_data[3])
+        self.update_events_listview()
+        self.update_calendar_status()
 
     ################################################################
     # The callback for when the broker responds to our connection request.
